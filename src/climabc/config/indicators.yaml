@@ -1,0 +1,265 @@
+# Climate Indicators Configuration
+# Supports per-source defaults and per-indicator overrides
+
+sources:
+  psl:
+    name: "NOAA Physical Sciences Laboratory"
+    base_url: "https://psl.noaa.gov"
+    
+    default:
+      format: "space_delimited"
+      columns: ['year', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
+      missing: -99.99
+      skiprows: []
+      delimiter: '\s+'
+      date_format: "{year}-{month:02d}-15"
+      unit: "°C"
+      frequency: "monthly"
+    
+    indicators:
+      nino34a:
+        name: "Niño 3.4 Anomaly"
+        description: "East Central Tropical Pacific SST Anomaly"
+        url: "/data/correlation/nina34.anom.data"
+        category: "enso"
+      
+      nino4a:
+        name: "Niño 4 Anomaly"
+        description: "Central Tropical Pacific SST Anomaly"
+        url: "/data/correlation/nina4.anom.data"
+        category: "enso"
+      
+      nino3a:
+        name: "Niño 3 Anomaly"
+        description: "Eastern Tropical Pacific SST Anomaly"
+        url: "/data/correlation/nina3.anom.data"
+        category: "enso"
+      
+      nino1a:
+        name: "Niño 1 Anomaly"
+        description: "Extreme Eastern Tropical Pacific SST Anomaly"
+        url: "/data/correlation/nina1.anom.data"
+        category: "enso"
+      
+      soi:
+        name: "Southern Oscillation Index"
+        description: "Sea Level Pressure difference between Tahiti and Darwin"
+        url: "/data/correlation/soi.data"
+        category: "enso"
+        unit: "hPa"
+        missing: -99.99
+      
+      oni:
+        name: "Oceanic Niño Index"
+        description: "3-month running mean of Niño 3.4 SST anomalies"
+        url: "/data/correlation/oni.data"
+        category: "enso"
+        missing: -99.9
+      
+      tni:
+        name: "Trans Niño Index"
+        description: "Difference between normalized Niño 1+2 and Niño 4"
+        url: "/data/correlation/tni.data"
+        category: "enso"
+        missing: -9.99
+      
+      censo:
+        name: "Bivariate ENSO"
+        description: "Bivariate ENSO from Niño 3.4 & SOI"
+        url: "/data/correlation/censo.data"
+        category: "enso"
+        missing: -9.99
+      
+      ao:
+        name: "Arctic Oscillation"
+        description: "Leading mode of low-frequency atmospheric circulation variability"
+        url: "/data/correlation/ao.data"
+        category: "oscillation"
+        unit: "index"
+        missing: -999
+      
+      pdo:
+        name: "Pacific Decadal Oscillation"
+        description: "Leading principal component of North Pacific monthly SST variability"
+        url: "/data/correlation/pdo.data"
+        category: "oscillation"
+        unit: "index"
+        missing: -9.90
+      
+      wp:
+        name: "Western Pacific Index"
+        description: "Area-averaged sea level pressure anomaly in the western Pacific"
+        url: "/data/correlation/wp.data"
+        category: "oscillation"
+        unit: "hPa"
+        missing: -99.9
+      
+      amo_us:
+        name: "AMO Unsmoothed"
+        description: "Atlantic Multidecadal Oscillation - Unsmoothed"
+        url: "/data/correlation/amon.us.data"
+        category: "oscillation"
+        unit: "°C"
+      
+      amo_sm:
+        name: "AMO Smoothed"
+        description: "Atlantic Multidecadal Oscillation - Smoothed"
+        url: "/data/correlation/amon.sm.data"
+        category: "oscillation"
+        unit: "°C"
+        missing: -99.99
+      
+      dmi:
+        name: "Dipole Mode Index"
+        description: "Indian Ocean Dipole Mode Index"
+        url: "/gcos_wgsp/Timeseries/Data/dmi.had.long.data"
+        category: "indian_ocean"
+        unit: "°C"
+        missing: -9999
+      
+      dmiwest:
+        name: "DMI West"
+        description: "Indian Ocean Dipole West"
+        url: "/gcos_wgsp/Timeseries/Data/dmiwest.had.long.data"
+        category: "indian_ocean"
+        unit: "°C"
+        missing: -9999
+      
+      dmieast:
+        name: "DMI East"
+        description: "Indian Ocean Dipole East"
+        url: "/gcos_wgsp/Timeseries/Data/dmieast.had.long.data"
+        category: "indian_ocean"
+        unit: "°C"
+        missing: -9999
+      
+      nao:
+        name: "North Atlantic Oscillation"
+        description: "Surface sea-level pressure difference between the Subtropical (Azores) High and the Subpolar Low"
+        url: "/gcos_wgsp/Timeseries/Data/nao.long.data"
+        category: "oscillation"
+        unit: "hPa"
+        missing: -99.99
+      
+      np:
+        name: "North Pacific Index"
+        description: "Area-weighted sea level pressure over the region 30°N-65°N, 160°E-140°W"
+        url: "/gcos_wgsp/Timeseries/Data/np.long.data"
+        category: "oscillation"
+        unit: "hPa"
+        missing: -999
+      
+      tpi:
+        name: "Trans Polar Index"
+        description: "Interdecadal Pacific Oscillation (IPO) index"
+        url: "/data/timeseries/IPOTPI/tpi.timeseries.ersstv5.data"
+        category: "oscillation"
+        unit: "°C"
+        missing: -99
+      
+      glbts:
+        name: "Global Temperature Anomaly (Station)"
+        description: "Global Average Temperature Anomaly from Station Data"
+        url: "/gcos_wgsp/Timeseries/Data/GLBTS.long.data"
+        category: "temperature"
+        unit: "°C"
+        missing: 9999
+      
+      glbtssst:
+        name: "Global Temperature Anomaly (Station & SST)"
+        description: "Global Average Temperature Anomaly from Station and SST Data"
+        url: "/gcos_wgsp/Timeseries/Data/GLBTSSST.long.data"
+        category: "temperature"
+        unit: "°C"
+        missing: 9999
+
+  ncei:
+    name: "NOAA National Centers for Environmental Information"
+    base_url: "https://www.ncei.noaa.gov"
+    
+    default:
+      format: "space_delimited"
+      missing: 99.99
+      skiprows: []
+    
+    indicators:
+      nina_all:
+        name: "All Niño Anomalies"
+        description: "Year, month, Niño 3, 4, 3.4, 1+2 anomalies"
+        url: "/pub/data/cmb/ersst/v5/index/ersst.v5.el_nino.dat"
+        columns: ['year', 'month', 'nina3a', 'nina4a', 'nina34a', 'nina12a']
+        category: "enso"
+        unit: "°C"
+      
+      nina_sst:
+        name: "All Niño SST"
+        description: "Year, month, Niño 3, 4, 3.4, 1+2 SST values"
+        url: "/pub/data/cmb/ersst/v5/index/ersst.v5.el_nino.sst.dat"
+        columns: ['year', 'month', 'nina3', 'nina4', 'nina34', 'nina12']
+        category: "temperature"
+        unit: "°C"
+      
+      pdo:
+        name: "Pacific Decadal Oscillation (NCEI)"
+        description: "Year with 12 monthly PDO values"
+        url: "/pub/data/cmb/ersst/v5/index/ersst.v5.pdo.dat"
+        columns: ['year', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
+        category: "oscillation"
+        unit: "index"
+      
+      amo:
+        name: "Atlantic Multidecadal Oscillation"
+        description: "Year, month, AMO unsmoothed"
+        url: "/pub/data/cmb/ersst/v5/index/ersst.v5.amo.dat"
+        columns: ['year', 'month', 'amo']
+        category: "oscillation"
+        unit: "°C"
+        skiprows: [0, 1]
+      
+      iod:
+        name: "Indian Ocean Dipole"
+        description: "Year, month, IOD west, east, and difference"
+        url: "/pub/data/cmb/ersst/v5/index/ersst.v5.iod.dat"
+        columns: ['year', 'month', 'iod_west', 'iod_east', 'iod_diff']
+        category: "indian_ocean"
+        unit: "°C"
+        skiprows: [0]
+
+  iri:
+    name: "IRI/LDEO Climate Data Library"
+    base_url: "https://iri.columbia.edu"
+    type: "forecast"
+    
+    default:
+      format: "html_table"
+      frequency: "monthly"
+    
+    indicators:
+      enso_prob:
+        name: "ENSO Probability"
+        description: "ENSO forecast probabilities from IRI/CPC"
+        url_template: "/our-expertise/climate/forecasts/enso/{year}-{month}-quick-look/"
+        params:
+          year: "{current_year}"
+          month: "{current_month_eng}"
+          source: "iri"
+          type: "prob"
+        category: "enso"
+        unit: "%"
+
+  jamstec:
+    name: "Japan Agency for Marine-Earth Science and Technology"
+    base_url: "https://www.jamstec.go.jp"
+    type: "forecast"
+    
+    default:
+      format: "csv"
+    
+    indicators:
+      dmi:
+        name: "Dipole Mode Index (JAMSTEC)"
+        description: "Indian Ocean Dipole Mode Index from SINTEX model"
+        url: "/virtualearth/data/SINTEX/SINTEX_DMI.csv"
+        category: "indian_ocean"
+        unit: "°C"
+        frequency: "monthly"
