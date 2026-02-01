@@ -35,16 +35,16 @@ This document tracks the implementation status of features defined in AGENTS.md.
 ## 🔴 High Priority (Next Up)
 
 ### 1. CLI Implementation
-**Status:** Pending  
+**Status:** Completed  
 **Description:** Command-line interface using `click`
 
 Tasks:
-- [ ] Create `src/climabc/cli/__init__.py` with main entry point
-- [ ] Implement `climabc index list` - List all indicators
-- [ ] Implement `climabc index fetch <indicator>` - Fetch specific indicator
-- [ ] Implement `climabc index fetch-all` - Fetch all indicators
-- [ ] Implement `climabc index status` - Check data source status
-- [ ] Add entry point to pyproject.toml: `climabc = "climabc.cli:cli"`
+- [x] Create `src/climabc/cli/__init__.py` with main entry point
+- [x] Implement `climabc index list` - List all indicators
+- [x] Implement `climabc index fetch <indicator>` - Fetch specific indicator
+- [x] Implement `climabc index fetch-all` - Fetch all indicators
+- [x] Implement `climabc index status` - Check data source status
+- [x] Add entry point to pyproject.toml: `climabc = "climabc.cli:cli"`
 
 **Files:**
 - `src/climabc/cli/__init__.py`
