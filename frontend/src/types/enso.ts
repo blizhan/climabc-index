@@ -15,8 +15,6 @@ export type MetricKey =
   | 'amo_sm'
   | 'dmiwest'
   | 'dmieast'
-  | 'nao'
-  | 'np'
   | 'tpi'
   | 'glbts'
   | 'glbtssst';
@@ -79,8 +77,6 @@ export const METRICS: MetricConfig[] = [
   { key: 'amo_sm', label: 'AMO (Smoothed)', unit: '°C', color: '#a61e4d', yAxisIndex: 0, updateFrequency: 'monthly' },
   { key: 'dmiwest', label: 'DMI West', unit: '°C', color: '#5f3dc4', yAxisIndex: 0, updateFrequency: 'monthly' },
   { key: 'dmieast', label: 'DMI East', unit: '°C', color: '#7048e8', yAxisIndex: 0, updateFrequency: 'monthly' },
-  { key: 'nao', label: 'NAO', unit: 'hPa', color: '#228be6', yAxisIndex: 1, updateFrequency: 'monthly' },
-  { key: 'np', label: 'NP', unit: 'hPa', color: '#15aabf', yAxisIndex: 1, updateFrequency: 'monthly' },
   { key: 'tpi', label: 'TPI', unit: '°C', color: '#e8590c', yAxisIndex: 0, updateFrequency: 'monthly' },
   { key: 'glbts', label: 'GLBTS', unit: '°C', color: '#c2255c', yAxisIndex: 0, updateFrequency: 'monthly' },
   { key: 'glbtssst', label: 'GLBTSSST', unit: '°C', color: '#862e9c', yAxisIndex: 0, updateFrequency: 'monthly' },

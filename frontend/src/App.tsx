@@ -87,17 +87,19 @@ function App() {
         </section>
 
         <section className="control-grid">
-          <ExportPanel 
-            data={data.observations} 
-            chartInstance={chartRef.current?.getChartInstance()} 
-            language={language}
-          />
-          <ForecastSelector
-            forecasts={data.forecasts}
-            selectedForecast={data.selectedForecast}
-            onSelect={selectForecast}
-            language={language}
-          />
+          <div className="control-grid-left">
+            <ExportPanel 
+              data={data.observations} 
+              chartInstance={chartRef.current?.getChartInstance()} 
+              language={language}
+            />
+            <ForecastSelector
+              forecasts={data.forecasts}
+              selectedForecast={data.selectedForecast}
+              onSelect={selectForecast}
+              language={language}
+            />
+          </div>
           <MetricSelector
             selectedMetrics={selectedMetrics}
             onChange={setSelectedMetrics}
