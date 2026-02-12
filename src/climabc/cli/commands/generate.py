@@ -11,7 +11,6 @@ import click
 import pandas as pd
 import yaml
 
-from climabc.fetchers.forecast import fetch_forecast_batches
 from climabc.fetchers.psl import PSLFetcher
 
 
@@ -338,12 +337,16 @@ def generate(
 
     click.echo(f"Config: {config_path}")
     cfg = _load_config(config_path)
+    # Keep fetch entrypoints monkeypatchable at `climabc.cli` for tests/tools.
+    from climabc import cli as cli_module
 
     # Fetch data – only indicators required by current frontend contract.
     required_indicators = [
         "nino34a", "nino1a", "nino3a", "nino4a", "soi", "oni", "dmi",
     ]
-    data = asyncio.run(_fetch_all_data(cfg, indicators=required_indicators))
+    data = asyncio.run(
+        cli_module.fetch_all_data(cfg, indicators=required_indicators)
+    )
 
     if not data:
         click.echo("No data fetched, aborting.", err=True)
@@ -399,7 +402,9 @@ def generate(
 
     # Fetch forecasts
     click.echo("Fetching forecast sources...")
-    forecasts: List[Dict[str, Any]] = asyncio.run(fetch_forecast_batches(cfg))
+    forecasts: List[Dict[str, Any]] = asyncio.run(
+        cli_module.fetch_forecast_batches(cfg)
+    )
     click.echo(f"  ✓ Forecast batches fetched: {len(forecasts)}")
 
     # Optional merged forecast parquet
