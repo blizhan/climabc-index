@@ -51,14 +51,13 @@ Optional outputs:
 uv run climabc generate \
   --split-output-dir data \
   --output data/enso_data.parquet \
-  --forecast-output data/forecast_data.parquet \
-  --json-output frontend/public/enso_data.json
+  --forecast-output data/forecast_data.parquet
 ```
 
 Notes:
-- `--output`, `--forecast-output`, and `--json-output` are optional.
+- `--output` and `--forecast-output` are optional.
 - Default workflow is split parquet under `data/`.
-- JSON export exists for compatibility/debug only.
+- Frontend runtime no longer depends on committed JSON artifacts.
 
 ### 2) Generate mock data (dev only)
 
@@ -83,6 +82,7 @@ data/
     oni.parquet
     dmi.parquet
   forecasts/
+    _index.parquet
     nino34/
       2026-01.parquet
       2025-12.parquet
@@ -95,19 +95,22 @@ data/
 - Observation parquet schema (per metric): `date`, `value`
 - Forecast parquet schema (per metric + issue batch):
   `forecast_id`, `source`, `issued_date`, `target_date`, `metric`, `value`, `is_historical`
+- Forecast index parquet schema:
+  `metric`, `issued_date`, `source`, `forecast_id`, `is_historical`
 
 ## Frontend Data Flow
 
-Frontend reads from `/api/enso-data` (Vite middleware), which is built from parquet via:
+Frontend reads parquet directly in browser.
 
-- `frontend/scripts/parquet_to_frontend_json.py`
-- observation input path default: `data/observations`
-- forecast input path default: `data/forecasts`
+- Development (`npm run dev`):
+  - reads from `/data/...` (served by Vite middleware from repo `data/`)
+- GitHub Pages production:
+  - resolves to `https://raw.githubusercontent.com/<owner>/<repo>/main/data/...`
+  - no build-time JSON conversion required
 
-Override paths with env vars:
+Optional override:
 
-- `CLIMABC_OBSERVATIONS_PATH` (or legacy `CLIMABC_OBS_PARQUET`)
-- `CLIMABC_FORECASTS_PATH` (or legacy `CLIMABC_FORECAST_PARQUET`)
+- `VITE_DATA_BASE_URL` to force a custom parquet base URL
 
 ## Frontend Run
 
@@ -118,6 +121,12 @@ npm run dev
 ```
 
 Open the shown local Vite URL.
+
+## CI/CD Data Refresh
+
+- `refresh-data.yml`: runs every 5 days and commits only `data/`
+- `deploy-pages.yml`: ignores `data/**` pushes, so parquet-only updates do not trigger frontend rebuild
+- Frontend reads latest parquet directly, so page data updates without recompiling UI bundle
 
 ## Forecast Fetching Behavior
 

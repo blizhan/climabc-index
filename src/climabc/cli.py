@@ -154,8 +154,19 @@ def write_split_forecast_files(forecasts: list[dict], output_dir: Path) -> None:
     forecast_root = output_dir / "forecasts"
     forecast_root.mkdir(parents=True, exist_ok=True)
     forecast_df = flatten_forecast_batches(forecasts)
+    index_columns = ["metric", "issued_date", "source", "forecast_id", "is_historical"]
+    index_path = forecast_root / "_index.parquet"
     if forecast_df.empty:
+        pd.DataFrame(columns=index_columns).to_parquet(index_path, index=False)
         return
+
+    (
+        forecast_df[index_columns]
+        .drop_duplicates()
+        .sort_values(["issued_date", "metric", "source", "forecast_id"], ascending=[False, True, True, True])
+        .reset_index(drop=True)
+        .to_parquet(index_path, index=False)
+    )
 
     grouped = forecast_df.groupby(["metric", "issued_date"], dropna=False, sort=True)
     for (metric, issued_date), group_df in grouped:

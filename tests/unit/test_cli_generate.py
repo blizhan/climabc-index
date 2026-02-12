@@ -274,6 +274,14 @@ def test_generate_splits_forecast_files_by_metric_and_batch(monkeypatch, tmp_pat
     assert batch_df.iloc[0]["target_date"] == "2024-02"
     assert batch_df.iloc[0]["value"] == pytest.approx(0.8)
 
+    index_path = split_output_dir / "forecasts" / "_index.parquet"
+    assert index_path.exists()
+    index_df = pd.read_parquet(index_path)
+    assert set(["metric", "issued_date", "source", "forecast_id", "is_historical"]).issubset(
+        set(index_df.columns)
+    )
+    assert set(index_df["metric"]) == {"nino34"}
+
 
 def test_generate_replaces_detected_anomalies_before_parquet(monkeypatch, tmp_path):
     """Detected invalid values must be converted to NaN before parquet save."""

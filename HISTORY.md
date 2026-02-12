@@ -12,11 +12,13 @@ This file tracks the *actual delivered state* of the repository.
 - Data output contract moved to split parquet directories:
   - `data/observations/<metric>.parquet`
   - `data/forecasts/<metric>/<issued_month>.parquet`
+- Forecast index file added:
+  - `data/forecasts/_index.parquet`
 - Frontend supports bilingual UI (ZH/EN), metric filter, forecast batch selector, timeline, and snapshot table
-- Frontend production data source is static `enso_data.json` generated at build time from parquet
+- Frontend reads parquet directly in runtime (no production JSON dependency)
 - GitHub Actions automation:
   - data refresh every 5 days (commits `data/`)
-  - Pages build/deploy on `main` push
+  - Pages build/deploy on `main` push with `data/**` ignored
 
 ---
 
@@ -48,11 +50,12 @@ This file tracks the *actual delivered state* of the repository.
 ### 2026-02-12: Frontend and deployment alignment
 
 - Frontend data flow aligned with split parquet + adapter script
+- Frontend switched to direct parquet runtime loading
 - Historical forecast batch interaction and timeline behavior improved
 - Added ZH/EN switch and streamlined source references in UI
 - Added CI workflows for:
   - scheduled data refresh (every 5 days)
-  - GitHub Pages build/deploy
+  - GitHub Pages build/deploy (data-only pushes do not rebuild frontend)
 
 ---
 
@@ -81,14 +84,15 @@ data/
   observations/
     <metric>.parquet
   forecasts/
+    _index.parquet
     <metric>/
       <issued_month>.parquet
 ```
 
 ### Frontend loading modes
 
-- Dev: `/api/enso-data` (Vite middleware uses parquet adapter script)
-- Prod (Pages): static `enso_data.json` generated during CI build
+- Dev: read `/data/...` parquet served by Vite middleware
+- Prod (Pages): read parquet from raw GitHub URL (`main/data`)
 
 ---
 

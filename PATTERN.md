@@ -39,6 +39,7 @@ data/
   observations/
     <metric>.parquet
   forecasts/
+    _index.parquet
     <metric>/
       <issued_month>.parquet
 ```
@@ -49,6 +50,8 @@ Schemas:
   - `date`, `value`
 - Forecast parquet:
   - `forecast_id`, `source`, `issued_date`, `target_date`, `metric`, `value`, `is_historical`
+- Forecast index parquet:
+  - `metric`, `issued_date`, `source`, `forecast_id`, `is_historical`
 
 ## 4. CLI Contract
 
@@ -69,12 +72,14 @@ Optional outputs are compatibility/debug features, not the primary contract.
 ## 5. Frontend Data Pattern
 
 Data loader behavior:
-- Development: fetch `/api/enso-data` from Vite middleware.
-- Production (GitHub Pages): fetch `${BASE_URL}enso_data.json`.
+- Development: read `/data/...` parquet files served by Vite middleware.
+- Production (GitHub Pages): read parquet files from raw GitHub URL (`main/data`).
+- Optional override: `VITE_DATA_BASE_URL`.
 
-Adapter script:
-- `frontend/scripts/parquet_to_frontend_json.py`
-- Converts `data/observations` + `data/forecasts` into frontend payload.
+Runtime assembly:
+- Frontend loads observation parquet by metric.
+- Frontend reads `forecasts/_index.parquet` to discover `(metric, issued_date)` files.
+- Frontend merges batch parquet rows into monthly forecast batches.
 
 ## 6. CI/CD Pattern
 
@@ -86,9 +91,9 @@ Adapter script:
 
 ### Pages deploy workflow
 
-- Triggered on `main` push (including automated data refresh commits).
-- Builds temporary `frontend/public/enso_data.json` from parquet in CI.
+- Triggered on `main` push while ignoring `data/**` changes.
 - Builds frontend and deploys `frontend/dist` to GitHub Pages.
+- Data-only refresh commits do not trigger UI rebuild; frontend reads latest parquet at runtime.
 
 ## 7. Testing Pattern
 

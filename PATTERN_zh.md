@@ -38,6 +38,7 @@ data/
   observations/
     <metric>.parquet
   forecasts/
+    _index.parquet
     <metric>/
       <issued_month>.parquet
 ```
@@ -48,6 +49,8 @@ data/
   - `date`, `value`
 - 预报 parquet：
   - `forecast_id`, `source`, `issued_date`, `target_date`, `metric`, `value`, `is_historical`
+- 预报索引 parquet：
+  - `metric`, `issued_date`, `source`, `forecast_id`, `is_historical`
 
 ## 4. CLI 契约
 
@@ -68,12 +71,14 @@ uv run climabc generate --split-output-dir data
 ## 5. 前端数据模式
 
 前端加载策略：
-- 开发环境：走 Vite 中间件 `/api/enso-data`
-- 生产环境（GitHub Pages）：读取 `${BASE_URL}enso_data.json`
+- 开发环境：直接读取 `/data/...` parquet（由 Vite 中间件暴露）
+- 生产环境（GitHub Pages）：直接读取 raw GitHub 上的 parquet（`main/data`）
+- 可选覆盖：`VITE_DATA_BASE_URL`
 
-适配脚本：
-- `frontend/scripts/parquet_to_frontend_json.py`
-- 将 `data/observations` + `data/forecasts` 转为前端所需 payload
+运行时组装：
+- 前端按指标读取观测 parquet
+- 通过 `forecasts/_index.parquet` 发现可用 `(metric, issued_date)` 文件
+- 将预报行数据在前端合并为批次结构
 
 ## 6. CI/CD 模式
 
@@ -85,9 +90,9 @@ uv run climabc generate --split-output-dir data
 
 ### Pages 部署工作流
 
-- `main` push 自动触发（包含定时刷新提交）。
-- 在 CI 中由 parquet 临时生成 `frontend/public/enso_data.json`。
+- `main` push 自动触发，但忽略 `data/**` 变更。
 - 构建前端并部署 `frontend/dist` 到 GitHub Pages。
+- 仅数据刷新提交不会触发前端重编译；页面运行时直接读取最新 parquet。
 
 ## 7. 测试模式
 
