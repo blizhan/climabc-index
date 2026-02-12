@@ -1,124 +1,151 @@
 # ClimABC Index
 
-[![CI Update](https://github.com/{user}/{repo}/actions/workflows/update-data.yml/badge.svg)](https://github.com/{user}/{repo}/actions)
-[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+Climate index data pipeline and visualization console for observations and forecasts.
 
-> Automated climate data aggregation platform - Tracking ENSO, PDO, AMO, IOD and more from major climate institutions (IRI, PSL, NCEI, JAMSTEC)
+## Current Scope
 
-## Supported Data Sources
+- Historical observations from **NOAA PSL** (used by CLI generate flow)
+- Forecast sources:
+  - **IRI ENSO Quick Look** (latest `current` + historical monthly quick-look pages)
+  - **JAMSTEC SINTEX-F DMI**
+- Frontend timeline and snapshot table reading data from split parquet directories
 
-| Institution | Type | Indicators | Status |
-|-------------|------|------------|--------|
-| IRI | Forecast | ENSO Probability | ✅ |
-| JAMSTEC | Forecast | Dipole Mode Index | ✅ |
-| NOAA PSL | Historical | Niño indices, SOI, AO, NAO, PDO, AMO, IOD | ✅ |
-| NCEI | Historical | Sea surface temperature, PDO, AMO, IOD | ✅ |
+## Data Sources
 
-## Quick Start
+| Institution | Type | Indicators in Current UI/Data Contract |
+|---|---|---|
+| NOAA PSL | Observation | `nino34`, `nino12`, `nino3`, `nino4`, `soi`, `oni`, `dmi` |
+| IRI | Forecast | `nino34` |
+| JAMSTEC | Forecast | `dmi` |
 
-### Installation
-
-```bash
-# Using uv (recommended)
-uv pip install climabc-index
-
-# Or using pip
-pip install climabc-index
-```
-
-### CLI Usage
+## Installation
 
 ```bash
-# List all available indicators
-climabc index list
-
-# Fetch specific indicator
-climabc index fetch nino34
-
-# Fetch all indicators
-climabc index fetch-all
-
-# Check data source status
-climabc index status
+uv sync
 ```
 
-### Python API
+## CLI
 
-```python
-from climabc import fetch_indicator
+Entry point:
 
-# Fetch Niño 3.4 anomaly
-df = fetch_indicator("nino34")
-print(df.tail())
+```bash
+uv run climabc --help
 ```
 
-## Live Dashboard
+### 1) Generate real data
 
-🔗 **[View Dashboard](https://yourusername.github.io/climabc-index/)**
-
-Features:
-- Real-time ENSO monitoring
-- Historical trend analysis
-- Multi-source data comparison
-- Interactive time series charts
-
-## RSS Feeds
-
-- **Data Updates**: `https://yourusername.github.io/climabc-index/feed.xml`
-- **ENSO Alerts**: `https://yourusername.github.io/climabc-index/alerts.xml`
-
-## Data Update Schedule
-
-- **Frequency**: Every 3 days (UTC 00:00)
-- **Manual Trigger**: Available via GitHub Actions
-- **History**: Retained for 365 days
-- **Storage**: Data stored in `data-update` branch
-
-## Repository Structure
-
-```
-climabc-index/
-├── src/climabc/          # Core Python package
-│   ├── fetchers/         # Data fetchers for each source
-│   ├── cli/              # Command-line interface
-│   └── storage/          # Data storage utilities
-├── docs/                 # GitHub Pages source
-│   ├── _layouts/         # Jekyll layouts
-│   ├── _includes/        # Reusable components
-│   ├── assets/           # CSS, JS, data files
-│   └── indicators/       # Indicator detail pages
-├── data/                 # Auto-updated data (data-update branch)
-├── .github/workflows/    # CI/CD configurations
-└── tests/                # Test suite
+```bash
+uv run climabc generate \
+  --split-output-dir data
 ```
 
-## Configuration
+This command will:
+- fetch required PSL observation indicators for frontend
+- sanitize known missing markers and out-of-range anomalies to `NaN` before parquet write
+- fetch forecast batches from configured forecast sources (IRI + JAMSTEC)
+- write split parquet outputs for frontend/backend consumption
 
-Data sources are configured in `src/climabc/config/indicators.yaml`:
+Optional outputs:
 
-```yaml
-sources:
-  psl:
-    base_url: "https://psl.noaa.gov/data/correlation/"
-    default:
-      columns: ['year', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
-      missing: -99.99
-    indicators:
-      nino34:
-        url: "nina34.anom.data"
-        name: "Niño 3.4 Anomaly"
+```bash
+uv run climabc generate \
+  --split-output-dir data \
+  --output data/enso_data.parquet \
+  --forecast-output data/forecast_data.parquet
 ```
 
-## Contributing
+Notes:
+- `--output` and `--forecast-output` are optional.
+- Default workflow is split parquet under `data/`.
+- Frontend runtime no longer depends on committed JSON artifacts.
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+### 2) Generate mock data (dev only)
 
-## License
+```bash
+uv run climabc mock --output-dir frontend/public
+```
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+`mock` creates synthetic data; `generate` uses real sources.
+
+## Output Layout
+
+By default (`--split-output-dir data`):
+
+```text
+data/
+  observations/
+    nino34.parquet
+    nino12.parquet
+    nino3.parquet
+    nino4.parquet
+    soi.parquet
+    oni.parquet
+    dmi.parquet
+  forecasts/
+    _index.parquet
+    nino34/
+      2026-01.parquet
+      2025-12.parquet
+      ...
+    dmi/
+      2026-01.parquet
+      ...
+```
+
+- Observation parquet schema (per metric): `date`, `value`
+- Forecast parquet schema (per metric + issue batch):
+  `forecast_id`, `source`, `issued_date`, `target_date`, `metric`, `value`, `is_historical`
+- Forecast index parquet schema:
+  `metric`, `issued_date`, `source`, `forecast_id`, `is_historical`
+
+## Frontend Data Flow
+
+Frontend reads parquet directly in browser.
+
+- Development (`npm run dev`):
+  - reads from `/data/...` (served by Vite middleware from repo `data/`)
+- GitHub Pages production:
+  - resolves to `https://raw.githubusercontent.com/<owner>/<repo>/main/data/...`
+  - no build-time JSON conversion required
+
+Optional override:
+
+- `VITE_DATA_BASE_URL` to force a custom parquet base URL
+
+## Frontend Run
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the shown local Vite URL.
+
+## CI/CD Data Refresh
+
+- `refresh-data.yml`: runs every 5 days and commits only `data/`
+- `deploy-pages.yml`: ignores `data/**` pushes, so parquet-only updates do not trigger frontend rebuild
+- Frontend reads latest parquet directly, so page data updates without recompiling UI bundle
+
+## Forecast Fetching Behavior
+
+- IRI fetcher first loads:
+  - `/our-expertise/climate/forecasts/enso/current/?enso_tab=enso-sst_table`
+- Then backfills historical quick-look pages:
+  - `/our-expertise/climate/forecasts/enso/{year}-{month}-quick-look/?enso_tab=enso-sst_table`
+- JAMSTEC fetcher parses release split from `SINTEX_DMI.csv` and emits DMI forecast batch.
+
+## Tests
+
+```bash
+uv run pytest
+cd frontend && npm test -- --run
+```
 
 ## Acknowledgments
 
-- Data provided by [NOAA PSL](https://psl.noaa.gov), [NCEI](https://www.ncei.noaa.gov), [IRI](https://iri.columbia.edu), and [JAMSTEC](https://www.jamstec.go.jp)
-- Built with Python, Jekyll, and Plotly.js
+Data providers:
+- NOAA PSL: https://psl.noaa.gov
+- IRI ENSO Quick Look: https://iri.columbia.edu/our-expertise/climate/forecasts/enso/current/?enso_tab=enso-sst_table
+- JAMSTEC SINTEX-F DMI: https://www.jamstec.go.jp/virtualearth/data/SINTEX/SINTEX_DMI.csv

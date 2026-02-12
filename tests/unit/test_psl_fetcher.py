@@ -76,6 +76,12 @@ STOP
         assert len(df) == 2
         assert -99.99 not in df["value"].values
 
+    def test_dmi_uses_updated_psl_timeseries_month_url(self, fetcher):
+        """DMI should use PSL timeseries/month data endpoint."""
+        config = fetcher.get_indicator_config("dmi")
+        url = fetcher._build_url(config)
+        assert url == "https://psl.noaa.gov/data/timeseries/month/data/dmi.had.long.data"
+
 
 # Minimal integration test using factory
 TestPSLIntegration = create_fetcher_tests(
