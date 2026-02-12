@@ -24,6 +24,39 @@ def _default_config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "config" / "indicators.yaml"
 
 
+def _canonical_metric_name(indicator: str) -> str:
+    """Map source indicator keys to frontend metric keys."""
+    aliases = {
+        "nino34a": "nino34",
+        "nino1a": "nino12",
+        "nino12a": "nino12",
+        "nino3a": "nino3",
+        "nino4a": "nino4",
+    }
+    return aliases.get(indicator, indicator)
+
+
+def _required_observation_indicators(config: Dict[str, Any]) -> List[str]:
+    """Resolve observation indicators from config, fallback to core ENSO metrics."""
+    psl_indicators = (
+        config.get("sources", {})
+        .get("psl", {})
+        .get("indicators", {})
+    )
+    if isinstance(psl_indicators, dict) and psl_indicators:
+        return list(psl_indicators.keys())
+
+    return [
+        "nino34a",
+        "nino1a",
+        "nino3a",
+        "nino4a",
+        "soi",
+        "oni",
+        "dmi",
+    ]
+
+
 def _load_config(config_path: Path) -> Dict[str, Any]:
     """Load configuration from YAML file."""
     with open(config_path, encoding="utf-8") as f:
@@ -341,9 +374,7 @@ def generate(
     from climabc import cli as cli_module
 
     # Fetch data – only indicators required by current frontend contract.
-    required_indicators = [
-        "nino34a", "nino1a", "nino3a", "nino4a", "soi", "oni", "dmi",
-    ]
+    required_indicators = _required_observation_indicators(cfg)
     data = asyncio.run(
         cli_module.fetch_all_data(cfg, indicators=required_indicators)
     )
@@ -357,14 +388,8 @@ def generate(
 
     # Rename columns to match frontend expectations
     column_map: Dict[str, str] = {
-        "nino34a": "nino34",
-        "nino1a": "nino12",
-        "nino12a": "nino12",
-        "nino3a": "nino3",
-        "nino4a": "nino4",
-        "soi": "soi",
-        "oni": "oni",
-        "dmi": "dmi",
+        indicator: _canonical_metric_name(indicator)
+        for indicator in required_indicators
     }
     merged = merged.rename(columns=column_map)
 
@@ -372,8 +397,13 @@ def generate(
     merged["date"] = merged["timestamp"].dt.strftime("%Y-%m")
     merged = merged.drop(columns=["timestamp"])
 
-    cols = ["date", "nino34", "nino12", "nino3", "nino4", "soi", "oni", "dmi"]
-    merged = merged[[c for c in cols if c in merged.columns]]
+    preferred_cols = ["date", "nino34", "nino12", "nino3", "nino4", "soi", "oni", "dmi"]
+    remaining_cols = sorted(
+        c for c in merged.columns if c not in preferred_cols
+    )
+    merged = merged[
+        [c for c in preferred_cols if c in merged.columns] + remaining_cols
+    ]
 
     merged, sanitize_stats = _sanitize_observation_values(merged, cfg, column_map)
     click.echo(

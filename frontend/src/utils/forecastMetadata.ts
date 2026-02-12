@@ -1,4 +1,4 @@
-import type { ENSODataPoint, ForecastBatch } from "../types/enso";
+import type { ENSOValues, ForecastBatch, MetricKey } from "../types/enso";
 import { METRICS } from "../types/enso";
 import type { Language } from "../i18n";
 
@@ -23,10 +23,10 @@ export function getForecastSourceLabel(forecast: ForecastBatch): string {
   return inferSourceFromId(forecast.id);
 }
 
-export function extractForecastMetrics(forecast: ForecastBatch): Array<keyof ENSODataPoint> {
-  const metricSet = new Set<keyof ENSODataPoint>();
+export function extractForecastMetrics(forecast: ForecastBatch): Array<MetricKey> {
+  const metricSet = new Set<MetricKey>();
   for (const point of forecast.data) {
-    for (const key of Object.keys(point) as Array<keyof ENSODataPoint>) {
+    for (const key of Object.keys(point) as Array<MetricKey>) {
       if (typeof point[key] === "number") {
         metricSet.add(key);
       }
@@ -96,7 +96,7 @@ export function buildMonthlyForecastBatch(
     return null;
   }
 
-  const mergedByTarget = new Map<string, Partial<ENSODataPoint>>();
+  const mergedByTarget = new Map<string, ENSOValues>();
   for (const batch of monthBatches) {
     batch.targetDates.forEach((targetDate, index) => {
       const point = batch.data[index];
@@ -109,10 +109,7 @@ export function buildMonthlyForecastBatch(
         if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) {
           continue;
         }
-        const key = rawKey as keyof ENSODataPoint;
-        if (key === "date") {
-          continue;
-        }
+        const key = rawKey as MetricKey;
         (mergedPoint as Record<string, number>)[key] = rawValue;
       }
       mergedByTarget.set(targetDate, mergedPoint);
@@ -134,7 +131,7 @@ export function buildMonthlyForecastBatch(
 
 export function findLatestForecastForMetric(
   forecasts: ForecastBatch[],
-  metric: keyof ENSODataPoint,
+  metric: MetricKey,
 ): ForecastBatch | null {
   return (
     forecasts

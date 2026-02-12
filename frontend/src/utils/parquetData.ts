@@ -1,4 +1,4 @@
-import type { DataSet, ENSODataPoint, ForecastBatch } from '../types/enso';
+import type { DataSet, ENSODataPoint, ENSOValues, ForecastBatch, MetricKey } from '../types/enso';
 
 export interface ForecastParquetRow {
   forecast_id: string;
@@ -35,7 +35,7 @@ interface HyparquetModule {
   }) => Promise<Array<Record<string, unknown>>>;
 }
 
-const OBSERVATION_METRICS: Array<keyof ENSODataPoint> = [
+const OBSERVATION_METRICS: MetricKey[] = [
   'nino34',
   'nino12',
   'nino3',
@@ -43,6 +43,20 @@ const OBSERVATION_METRICS: Array<keyof ENSODataPoint> = [
   'soi',
   'oni',
   'dmi',
+  'tni',
+  'censo',
+  'ao',
+  'pdo',
+  'wp',
+  'amo_us',
+  'amo_sm',
+  'dmiwest',
+  'dmieast',
+  'nao',
+  'np',
+  'tpi',
+  'glbts',
+  'glbtssst',
 ];
 
 function _stripTrailingSlash(value: string): string {
@@ -155,7 +169,7 @@ export function groupForecastRows(rows: ForecastParquetRow[]): ForecastBatch[] {
   const byIssue = new Map<
     string,
     {
-      byTarget: Map<string, Partial<ENSODataPoint>>;
+      byTarget: Map<string, ENSOValues>;
       allHistorical: boolean;
     }
   >();
@@ -170,7 +184,7 @@ export function groupForecastRows(rows: ForecastParquetRow[]): ForecastBatch[] {
     }
 
     const issueState = byIssue.get(issued) || {
-      byTarget: new Map<string, Partial<ENSODataPoint>>(),
+      byTarget: new Map<string, ENSOValues>(),
       allHistorical: true,
     };
 
@@ -206,7 +220,7 @@ export function groupForecastRows(rows: ForecastParquetRow[]): ForecastBatch[] {
 function _mergeObservationRows(
   observationRowsByMetric: Record<string, Array<Record<string, unknown>>>,
 ): ENSODataPoint[] {
-  const byDate = new Map<string, Partial<ENSODataPoint>>();
+  const byDate = new Map<string, ENSOValues>();
 
   for (const [metric, rows] of Object.entries(observationRowsByMetric)) {
     for (const row of rows) {
@@ -216,31 +230,34 @@ function _mergeObservationRows(
         continue;
       }
 
-      const point = byDate.get(date) || { date };
+      const point = byDate.get(date) || {};
       (point as Record<string, unknown>)[metric] = value;
       byDate.set(date, point);
     }
   }
 
-  return Array.from(byDate.values())
-    .sort((left, right) => String(left.date).localeCompare(String(right.date)))
-    .map((row) => ({
-      date: String(row.date),
-      nino34: _toNumber(row.nino34) ?? Number.NaN,
-      nino12: _toNumber(row.nino12) ?? Number.NaN,
-      nino3: _toNumber(row.nino3) ?? Number.NaN,
-      nino4: _toNumber(row.nino4) ?? Number.NaN,
-      soi: _toNumber(row.soi) ?? Number.NaN,
-      oni: _toNumber(row.oni) ?? Number.NaN,
-      dmi: _toNumber(row.dmi) ?? undefined,
+  return Array.from(byDate.entries())
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([date, values]) => ({
+      date,
+      ...values,
     }));
+}
+
+function _normalizeMetric(metric: string): MetricKey | null {
+  const key = metric as MetricKey;
+  if (OBSERVATION_METRICS.includes(key)) {
+    return key;
+  }
+  return null;
 }
 
 function _toForecastRows(rows: Array<Record<string, unknown>>): ForecastParquetRow[] {
   const parsed: ForecastParquetRow[] = [];
   for (const row of rows) {
     const value = _toNumber(row.value);
-    if (value === null) {
+    const metric = _normalizeMetric(String(row.metric || ''));
+    if (value === null || !metric) {
       continue;
     }
 
@@ -249,7 +266,7 @@ function _toForecastRows(rows: Array<Record<string, unknown>>): ForecastParquetR
       source: String(row.source || 'unknown'),
       issued_date: String(row.issued_date || ''),
       target_date: String(row.target_date || ''),
-      metric: String(row.metric || ''),
+      metric,
       value,
       is_historical:
         row.is_historical === true ||

@@ -1,4 +1,4 @@
-import { ENSODataPoint, ForecastBatch, DataSet } from '../types/enso';
+import { ENSODataPoint, ENSOValues, ForecastBatch, DataSet } from '../types/enso';
 import { loadDatasetFromParquet } from './parquetData';
 
 const DATA_BASE_URL = (import.meta.env.VITE_DATA_BASE_URL || '').trim();
@@ -41,7 +41,7 @@ export function generateMockData(): DataSet {
     const issueDateStr = issueDate.toISOString().slice(0, 7);
 
     const targetDates: string[] = [];
-    const forecastData: Partial<ENSODataPoint>[] = [];
+    const forecastData: ENSOValues[] = [];
 
     // Forecast for next 12 months from issue date
     for (let j = 1; j <= 12; j++) {
