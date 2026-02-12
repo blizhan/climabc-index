@@ -2,6 +2,7 @@
 
 import click
 
+from climabc.cli.commands.generate import generate, mock
 from climabc.cli.commands.index import index
 
 
@@ -11,5 +12,7 @@ def cli() -> None:
 
 
 cli.add_command(index)
+cli.add_command(generate)
+cli.add_command(mock)
 
 __all__ = ["cli"]

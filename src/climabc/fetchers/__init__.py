@@ -7,10 +7,12 @@ from .forecast import (
     JamstecForecastFetcher,
     fetch_forecast_batches,
 )
+from .ncei import NCEIFetcher
 from .psl import PSLFetcher
 
 __all__ = [
     "BaseFetcher",
+    "NCEIFetcher",
     "PSLFetcher",
     "BaseForecastFetcher",
     "IriForecastFetcher",

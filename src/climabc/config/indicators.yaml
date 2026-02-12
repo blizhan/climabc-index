@@ -229,7 +229,7 @@ sources:
     name: "IRI/LDEO Climate Data Library"
     base_url: "https://iri.columbia.edu"
     type: "forecast"
-    recent_batches: 150
+    recent_batches: 6
     
     default:
       format: "html_table"
