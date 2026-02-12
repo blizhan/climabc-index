@@ -1,3 +1,4 @@
+import { METRICS } from '../types/enso';
 import type { DataSet, ENSODataPoint, ENSOValues, ForecastBatch, MetricKey } from '../types/enso';
 
 export interface ForecastParquetRow {
@@ -52,12 +53,12 @@ const OBSERVATION_METRICS: MetricKey[] = [
   'amo_sm',
   'dmiwest',
   'dmieast',
-  'nao',
-  'np',
   'tpi',
   'glbts',
   'glbtssst',
 ];
+
+const ALL_METRICS: MetricKey[] = METRICS.map((metric) => metric.key);
 
 function _stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
@@ -246,7 +247,7 @@ function _mergeObservationRows(
 
 function _normalizeMetric(metric: string): MetricKey | null {
   const key = metric as MetricKey;
-  if (OBSERVATION_METRICS.includes(key)) {
+  if (ALL_METRICS.includes(key)) {
     return key;
   }
   return null;
