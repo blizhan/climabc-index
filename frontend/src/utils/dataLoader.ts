@@ -1,4 +1,4 @@
-import { ENSODataPoint, ForecastBatch, DataSet } from '../types/enso';
+import { ENSODataPoint, ENSOValues, ForecastBatch, DataSet, METRICS } from '../types/enso';
 import { loadDatasetFromParquet } from './parquetData';
 
 const DATA_BASE_URL = (import.meta.env.VITE_DATA_BASE_URL || '').trim();
@@ -41,7 +41,7 @@ export function generateMockData(): DataSet {
     const issueDateStr = issueDate.toISOString().slice(0, 7);
 
     const targetDates: string[] = [];
-    const forecastData: Partial<ENSODataPoint>[] = [];
+    const forecastData: ENSOValues[] = [];
 
     // Forecast for next 12 months from issue date
     for (let j = 1; j <= 12; j++) {
@@ -84,15 +84,11 @@ export function generateMockData(): DataSet {
 }
 
 export function exportToCSV(data: ENSODataPoint[], filename: string = 'enso-data.csv'): void {
-  const headers = ['date', 'nino34', 'nino12', 'nino3', 'nino4', 'soi', 'oni'];
+  const metricKeys = METRICS.map((metric) => metric.key);
+  const headers = ['date', ...metricKeys];
   const rows = data.map(row => [
     row.date,
-    row.nino34,
-    row.nino12,
-    row.nino3,
-    row.nino4,
-    row.soi,
-    row.oni,
+    ...metricKeys.map((key) => row[key] ?? ''),
   ]);
   
   const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');

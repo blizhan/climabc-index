@@ -1,11 +1,11 @@
-import type { ENSODataPoint, ForecastBatch } from "../types/enso";
+import type { ENSODataPoint, ForecastBatch, MetricKey } from "../types/enso";
 import { findLatestForecastForMetric } from "./forecastMetadata";
 
 export interface DataSnapshotRow {
   date: string;
   rowType: "observation" | "forecast";
   issuedDate: string | null;
-  values: Partial<Record<keyof ENSODataPoint, number>>;
+  values: Partial<Record<MetricKey, number>>;
 }
 
 function toComparableMonth(monthToken: string): number {
@@ -19,10 +19,10 @@ function toComparableMonth(monthToken: string): number {
 }
 
 function pickMetricValues(
-  source: Partial<Record<keyof ENSODataPoint, unknown>>,
-  metrics: Array<keyof ENSODataPoint>,
-): Partial<Record<keyof ENSODataPoint, number>> {
-  const values: Partial<Record<keyof ENSODataPoint, number>> = {};
+  source: Partial<Record<MetricKey, unknown>>,
+  metrics: Array<MetricKey>,
+): Partial<Record<MetricKey, number>> {
+  const values: Partial<Record<MetricKey, number>> = {};
   for (const metric of metrics) {
     const metricValue = source[metric];
     if (typeof metricValue === "number") {
@@ -36,7 +36,7 @@ export function buildDataSnapshotRows(
   observations: ENSODataPoint[],
   forecasts: ForecastBatch[],
   forecastBatch: ForecastBatch | null,
-  metrics: Array<keyof ENSODataPoint>,
+  metrics: Array<MetricKey>,
   observationLimit = 18,
   forecastLimit = 12,
 ): DataSnapshotRow[] {
@@ -52,7 +52,7 @@ export function buildDataSnapshotRows(
     }));
 
   const forecastRowsByDate = new Map<string, DataSnapshotRow>();
-  const selectedBatchByMetric = new Map<keyof ENSODataPoint, ForecastBatch>();
+  const selectedBatchByMetric = new Map<MetricKey, ForecastBatch>();
   for (const metric of metrics) {
     const resolvedBatch = forecastBatch ?? findLatestForecastForMetric(forecasts, metric);
     if (resolvedBatch) {

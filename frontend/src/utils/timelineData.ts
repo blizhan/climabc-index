@@ -1,4 +1,4 @@
-import type { ENSODataPoint, ForecastBatch } from "../types/enso";
+import type { ENSODataPoint, ForecastBatch, MetricKey } from "../types/enso";
 
 function isMonthToken(value: string): boolean {
   return /^\d{4}-\d{2}$/.test(value);
@@ -29,7 +29,7 @@ export function buildTimelineDates(
 export function buildObservationSeriesData(
   dates: string[],
   observations: ENSODataPoint[],
-  metric: keyof ENSODataPoint,
+  metric: MetricKey,
 ): Array<number | null> {
   const byDate = new Map<string, ENSODataPoint>();
   for (const point of observations) {
@@ -45,7 +45,7 @@ export function buildObservationSeriesData(
 export function buildForecastSeriesData(
   dates: string[],
   forecast: ForecastBatch,
-  metric: keyof ENSODataPoint,
+  metric: MetricKey,
   observationsByDate?: Map<string, ENSODataPoint>,
 ): Array<number | null> {
   const seriesData: Array<number | null> = new Array(dates.length).fill(null);
