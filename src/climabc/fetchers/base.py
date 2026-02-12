@@ -234,6 +234,14 @@ class BaseFetcher(ABC):
         """Transform wide format (year x months) to long format."""
         value_cols = [c for c in df.columns if c != id_col]
 
+        # Convert id_col to numeric first, coercing invalid values (like missing markers) to NaN
+        df = df.copy()
+        df[id_col] = pd.to_numeric(df[id_col], errors='coerce')
+
+        # Filter out rows with invalid years (NaN or out of valid range 1-2200)
+        df = df.dropna(subset=[id_col])
+        df = df[df[id_col].astype(float).between(1, 2200)]
+
         long_df = df.melt(
             id_vars=[id_col],
             value_vars=value_cols,
