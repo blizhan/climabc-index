@@ -112,7 +112,7 @@ export const ForecastSelector: React.FC<ForecastSelectorProps> = ({
         )}
       </div>
       
-      <p className="mt-2 text-xs text-[var(--ink-muted)]">
+      <p className="mt-2 text-xs text-[var(--ink-muted)] text-right">
         {t.forecastSelectorHint}
       </p>
     </div>

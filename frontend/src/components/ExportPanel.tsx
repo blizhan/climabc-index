@@ -41,8 +41,10 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({ data, chartInstance, l
 
   return (
     <div className="panel-subtle fade-in">
-      <h3 className="panel-title">{t.exportPanelTitle}</h3>
-      <p className="panel-subtitle mb-3">{t.exportPanelSubtitle}</p>
+      <div className="mb-3">
+        <h3 className="panel-title inline">{t.exportPanelTitle}</h3>
+        <span className="panel-subtitle" style={{ marginLeft: '0.5rem' }}>{t.exportPanelSubtitle}</span>
+      </div>
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => handleExport('csv')}
