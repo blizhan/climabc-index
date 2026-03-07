@@ -47,7 +47,7 @@ export const ForecastSelector: React.FC<ForecastSelectorProps> = ({
   };
 
   return (
-    <div className="panel-subtle fade-in">
+    <div className="panel-subtle fade-in relative z-30">
       <div className="flex items-center justify-between mb-2">
         <h3 className="panel-title">{t.forecastSelectorTitle}</h3>
         <span className="panel-meta">{t.forecastSelectorBatchCount(issueMonths.length)}</span>
