@@ -206,13 +206,26 @@ def _write_split_forecast_files(forecasts: List[Dict[str, Any]], output_dir: Pat
     index_columns = ["metric", "issued_date", "source", "forecast_id", "is_historical"]
     index_path = forecast_root / "_index.parquet"
 
+    existing_index = pd.DataFrame(columns=index_columns)
+    if index_path.exists():
+        try:
+            existing_index = pd.read_parquet(index_path)
+        except Exception:
+            click.echo(
+                "Warning: Existing forecast index is unreadable and will be rebuilt.",
+                err=True,
+            )
+
     if forecast_df.empty:
-        pd.DataFrame(columns=index_columns).to_parquet(index_path, index=False)
+        existing_index.reindex(columns=index_columns).to_parquet(index_path, index=False)
         return
 
+    new_index = forecast_df[index_columns]
+    merged_index = pd.concat(
+        [existing_index.reindex(columns=index_columns), new_index], ignore_index=True
+    )
     (
-        forecast_df[index_columns]
-        .drop_duplicates()
+        merged_index.drop_duplicates(subset=["metric", "issued_date", "source", "forecast_id"])
         .sort_values(
             ["issued_date", "metric", "source", "forecast_id"],
             ascending=[False, True, True, True],

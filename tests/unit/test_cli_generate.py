@@ -283,6 +283,54 @@ def test_generate_splits_forecast_files_by_metric_and_batch(monkeypatch, tmp_pat
     assert set(index_df["metric"]) == {"nino34"}
 
 
+
+
+def test_generate_forecast_index_preserves_existing_history(monkeypatch, tmp_path):
+    """Existing forecast index entries should be kept when adding new batches."""
+
+    async def fake_fetch_all_data(config, indicators=None):
+        return _sample_indicator_data()
+
+    async def fake_fetch_forecast_batches(_config):
+        return [
+            {
+                "id": "forecast-iri-2025-02",
+                "issuedDate": "2025-02",
+                "targetDates": ["2025-03"],
+                "data": [{"nino34": 0.6}],
+                "isHistorical": False,
+            }
+        ]
+
+    split_output_dir = tmp_path / "split-data"
+    forecasts_dir = split_output_dir / "forecasts"
+    forecasts_dir.mkdir(parents=True, exist_ok=True)
+
+    pd.DataFrame(
+        [
+            {
+                "metric": "nino34",
+                "issued_date": "2020-01",
+                "source": "iri",
+                "forecast_id": "forecast-iri-2020-01",
+                "is_historical": True,
+            }
+        ]
+    ).to_parquet(forecasts_dir / "_index.parquet", index=False)
+
+    result, _, _, _, split_output_dir = _run_generate(
+        monkeypatch,
+        tmp_path,
+        fake_fetch_all_data,
+        fake_fetch_forecast_batches=fake_fetch_forecast_batches,
+    )
+
+    assert result.exit_code == 0, result.output
+
+    index_df = pd.read_parquet(split_output_dir / "forecasts" / "_index.parquet")
+    assert len(index_df) == 2
+    assert set(index_df["issued_date"]) == {"2020-01", "2025-02"}
+
 def test_generate_replaces_detected_anomalies_before_parquet(monkeypatch, tmp_path):
     """Detected invalid values must be converted to NaN before parquet save."""
 
