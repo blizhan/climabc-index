@@ -206,24 +206,54 @@ def _write_split_forecast_files(forecasts: List[Dict[str, Any]], output_dir: Pat
     index_columns = ["metric", "issued_date", "source", "forecast_id", "is_historical"]
     index_path = forecast_root / "_index.parquet"
 
-    existing_index = pd.DataFrame(columns=index_columns)
-    if index_path.exists():
-        try:
-            existing_index = pd.read_parquet(index_path)
-        except Exception:
-            click.echo(
-                "Warning: Existing forecast index is unreadable and will be rebuilt.",
-                err=True,
-            )
+    # Scan existing forecast files on disk to rebuild complete index
+    existing_files_index = []
+    for metric_dir in forecast_root.iterdir():
+        if not metric_dir.is_dir() or metric_dir.name.startswith("_"):
+            continue
+        metric = metric_dir.name
+        for parquet_file in metric_dir.glob("*.parquet"):
+            issued_date = parquet_file.stem  # e.g., "2025-12"
+            try:
+                batch_df = pd.read_parquet(parquet_file)
+                if not batch_df.empty:
+                    # Extract metadata from first row
+                    row = batch_df.iloc[0]
+                    existing_files_index.append({
+                        "metric": metric,
+                        "issued_date": issued_date,
+                        "source": str(row.get("source", "unknown")),
+                        "forecast_id": str(row.get("forecast_id", f"forecast-{issued_date}")),
+                        "is_historical": bool(row.get("is_historical", True)),
+                    })
+            except Exception:
+                # Skip unreadable files
+                continue
 
     if forecast_df.empty:
-        existing_index.reindex(columns=index_columns).to_parquet(index_path, index=False)
+        # No new forecasts, rebuild index from existing files only
+        if existing_files_index:
+            index_df = pd.DataFrame(existing_files_index)
+        else:
+            index_df = pd.DataFrame(columns=index_columns)
+        (
+            index_df.drop_duplicates(subset=["metric", "issued_date", "source", "forecast_id"])
+            .sort_values(
+                ["issued_date", "metric", "source", "forecast_id"],
+                ascending=[False, True, True, True],
+            )
+            .reset_index(drop=True)
+            .to_parquet(index_path, index=False)
+        )
         return
 
+    # Merge new batches with existing files index
     new_index = forecast_df[index_columns]
-    merged_index = pd.concat(
-        [existing_index.reindex(columns=index_columns), new_index], ignore_index=True
-    )
+    all_indices = [new_index]
+    if existing_files_index:
+        all_indices.append(pd.DataFrame(existing_files_index))
+    
+    merged_index = pd.concat(all_indices, ignore_index=True)
     (
         merged_index.drop_duplicates(subset=["metric", "issued_date", "source", "forecast_id"])
         .sort_values(
