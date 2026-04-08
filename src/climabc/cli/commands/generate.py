@@ -11,12 +11,19 @@ import click
 import pandas as pd
 import yaml
 
+from climabc.fetchers.base import BaseFetcher
+from climabc.fetchers.ncei import NCEIFetcher
 from climabc.fetchers.psl import PSLFetcher
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# Observation metrics that are not served from PSL in the default generate pipeline.
+DEFAULT_OBSERVATION_SOURCE_BY_INDICATOR: Dict[str, str] = {
+    "pdo": "ncei",
+}
 
 
 def _default_config_path() -> Path:
@@ -63,7 +70,7 @@ def _load_config(config_path: Path) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
-async def _fetch_indicator(fetcher: PSLFetcher, indicator: str) -> pd.DataFrame:
+async def _fetch_indicator(fetcher: BaseFetcher, indicator: str) -> pd.DataFrame:
     """Fetch data for a single indicator."""
     click.echo(f"  Fetching {indicator}...")
     df = await fetcher.fetch(indicator)
@@ -75,24 +82,54 @@ async def _fetch_all_data(
     config: Dict[str, Any], indicators: Optional[List[str]] = None
 ) -> Dict[str, pd.DataFrame]:
     """Fetch indicator data, optionally scoped to a specific indicator list."""
-    fetcher = PSLFetcher(config)
-    available_indicators = fetcher.indicators
-    requested_indicators = indicators or list(available_indicators)
+    psl_fetcher = PSLFetcher(config)
+    ncei_fetcher = NCEIFetcher(config)
 
-    unknown_indicators = [
-        ind for ind in requested_indicators if ind not in available_indicators
-    ]
+    available_psl = set(psl_fetcher.indicators)
+    available_ncei = set(ncei_fetcher.indicators)
+    requested_indicators = indicators or list(psl_fetcher.indicators)
+
+    unknown_indicators: List[str] = []
+    for ind in requested_indicators:
+        src = DEFAULT_OBSERVATION_SOURCE_BY_INDICATOR.get(ind, "psl")
+        if src == "psl" and ind not in available_psl:
+            unknown_indicators.append(ind)
+        elif src == "ncei" and ind not in available_ncei:
+            unknown_indicators.append(ind)
     if unknown_indicators:
         raise ValueError(f"Unknown indicators requested: {unknown_indicators}")
 
-    click.echo(f"Fetching {len(requested_indicators)} indicators from PSL...")
+    psl_inds = [
+        i
+        for i in requested_indicators
+        if DEFAULT_OBSERVATION_SOURCE_BY_INDICATOR.get(i, "psl") == "psl"
+    ]
+    ncei_inds = [
+        i
+        for i in requested_indicators
+        if DEFAULT_OBSERVATION_SOURCE_BY_INDICATOR.get(i) == "ncei"
+    ]
 
-    async with fetcher:
-        tasks = [_fetch_indicator(fetcher, ind) for ind in requested_indicators]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    click.echo(
+        f"Fetching {len(requested_indicators)} indicators "
+        f"(PSL: {len(psl_inds)}, NCEI: {len(ncei_inds)})..."
+    )
 
     data: Dict[str, pd.DataFrame] = {}
-    for indicator, result in zip(requested_indicators, results):
+
+    async with psl_fetcher:
+        tasks = [_fetch_indicator(psl_fetcher, ind) for ind in psl_inds]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    for indicator, result in zip(psl_inds, results):
+        if isinstance(result, Exception):
+            click.echo(f"    ✗ Failed: {result}", err=True)
+        else:
+            data[indicator] = result
+
+    async with ncei_fetcher:
+        tasks = [_fetch_indicator(ncei_fetcher, ind) for ind in ncei_inds]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    for indicator, result in zip(ncei_inds, results):
         if isinstance(result, Exception):
             click.echo(f"    ✗ Failed: {result}", err=True)
         else:
@@ -206,6 +243,15 @@ def _write_split_forecast_files(forecasts: List[Dict[str, Any]], output_dir: Pat
     index_columns = ["metric", "issued_date", "source", "forecast_id", "is_historical"]
     index_path = forecast_root / "_index.parquet"
 
+    prior_index_df = pd.DataFrame(columns=index_columns)
+    if index_path.exists():
+        try:
+            loaded = pd.read_parquet(index_path)
+            if not loaded.empty and set(index_columns).issubset(loaded.columns):
+                prior_index_df = loaded[list(index_columns)].copy()
+        except Exception:
+            pass
+
     # Scan existing forecast files on disk to rebuild complete index
     existing_files_index = []
     for metric_dir in forecast_root.iterdir():
@@ -231,9 +277,14 @@ def _write_split_forecast_files(forecasts: List[Dict[str, Any]], output_dir: Pat
                 continue
 
     if forecast_df.empty:
-        # No new forecasts, rebuild index from existing files only
+        # No new forecasts, rebuild index from on-disk metric files and prior index
+        frames: List[pd.DataFrame] = []
         if existing_files_index:
-            index_df = pd.DataFrame(existing_files_index)
+            frames.append(pd.DataFrame(existing_files_index))
+        if not prior_index_df.empty:
+            frames.append(prior_index_df)
+        if frames:
+            index_df = pd.concat(frames, ignore_index=True)
         else:
             index_df = pd.DataFrame(columns=index_columns)
         (
@@ -247,12 +298,14 @@ def _write_split_forecast_files(forecasts: List[Dict[str, Any]], output_dir: Pat
         )
         return
 
-    # Merge new batches with existing files index
+    # Merge new batches with existing files index and any prior _index.parquet rows
     new_index = forecast_df[index_columns]
-    all_indices = [new_index]
+    all_indices: List[pd.DataFrame] = [new_index]
     if existing_files_index:
         all_indices.append(pd.DataFrame(existing_files_index))
-    
+    if not prior_index_df.empty:
+        all_indices.append(prior_index_df)
+
     merged_index = pd.concat(all_indices, ignore_index=True)
     (
         merged_index.drop_duplicates(subset=["metric", "issued_date", "source", "forecast_id"])
@@ -280,9 +333,6 @@ def _sanitize_observation_values(
 ) -> Tuple[pd.DataFrame, Dict[str, int]]:
     """Replace known missing markers and detected out-of-range values with NaN."""
     cleaned = observations.copy()
-    source_config = config.get("sources", {}).get("psl", {})
-    source_default = source_config.get("default", {})
-    indicator_config = source_config.get("indicators", {})
 
     stats: Dict[str, int] = {"missing_replaced": 0, "outlier_replaced": 0}
 
@@ -290,13 +340,16 @@ def _sanitize_observation_values(
     for metric in metric_columns:
         cleaned.loc[:, metric] = pd.to_numeric(cleaned[metric], errors="coerce")
 
-    default_missing = source_default.get("missing")
     for source_indicator, metric in source_to_metric.items():
         if metric not in cleaned.columns:
             continue
-        missing_value = indicator_config.get(source_indicator, {}).get(
-            "missing", default_missing
+        source_id = DEFAULT_OBSERVATION_SOURCE_BY_INDICATOR.get(
+            source_indicator, "psl"
         )
+        src_cfg = config.get("sources", {}).get(source_id, {})
+        src_default = src_cfg.get("default", {})
+        ind_cfg = src_cfg.get("indicators", {}).get(source_indicator, {})
+        missing_value = ind_cfg.get("missing", src_default.get("missing"))
         if missing_value is None:
             continue
         try:
@@ -394,10 +447,11 @@ def generate(
     forecast_output: Optional[Path],
     split_output_dir: Path,
 ) -> None:
-    """Generate ENSO data files from PSL sources.
+    """Generate ENSO data files from configured observation sources.
 
-    Fetches indicator data, merges into wide format, generates forecasts,
-    and outputs both parquet and JSON for frontend consumption.
+    Fetches indicator data (PSL by default; PDO from NCEI), merges into wide
+    format, generates forecasts, and outputs both parquet and JSON for frontend
+    consumption.
     """
     click.echo("=" * 50)
     click.echo("ClimABC Index - Data Generation")

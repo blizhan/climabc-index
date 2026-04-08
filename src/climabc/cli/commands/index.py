@@ -18,6 +18,11 @@ FETCHERS = {
     "psl": PSLFetcher,
 }
 
+# When the same indicator id exists in multiple sources, prefer this source if listed.
+_DEFAULT_SOURCE_IF_AMBIGUOUS: Dict[str, str] = {
+    "pdo": "ncei",
+}
+
 
 def _config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "config" / "indicators.yaml"
@@ -64,6 +69,9 @@ def resolve_indicator_source(
         return source
 
     if len(matches) > 1:
+        preferred = _DEFAULT_SOURCE_IF_AMBIGUOUS.get(indicator)
+        if preferred and preferred in matches:
+            return preferred
         raise click.ClickException(
             f"Indicator '{indicator}' exists in multiple sources: {', '.join(matches)}. "
             "Please specify --source."
