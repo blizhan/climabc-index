@@ -206,8 +206,21 @@ def _write_split_forecast_files(forecasts: List[Dict[str, Any]], output_dir: Pat
     index_columns = ["metric", "issued_date", "source", "forecast_id", "is_historical"]
     index_path = forecast_root / "_index.parquet"
 
+    # Load existing index first to preserve history even when parquet batches are absent.
+    existing_files_index: List[Dict[str, Any]] = []
+    if index_path.exists():
+        try:
+            existing_index_df = pd.read_parquet(index_path)
+            if not existing_index_df.empty:
+                missing_cols = [col for col in index_columns if col not in existing_index_df.columns]
+                for col in missing_cols:
+                    existing_index_df[col] = None
+                existing_files_index.extend(existing_index_df[index_columns].to_dict("records"))
+        except Exception:
+            # Ignore unreadable legacy index and fallback to filesystem scan.
+            pass
+
     # Scan existing forecast files on disk to rebuild complete index
-    existing_files_index = []
     for metric_dir in forecast_root.iterdir():
         if not metric_dir.is_dir() or metric_dir.name.startswith("_"):
             continue
