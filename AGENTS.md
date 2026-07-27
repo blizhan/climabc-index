@@ -123,14 +123,21 @@ sources:
         skiprows: [0, 1]  # Skip header rows
   
   iri:
+    base_url: "https://ensoforecast.iri.columbia.edu"
+    type: "forecast"
+    recent_batches: 3
+
+    default:
+      format: "json"
+      frequency: "monthly"
+
     indicators:
       enso_prob:
-        # URL with placeholders for dynamic values
-        url_template: "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/{year}-{month}-quick-look/"
-        params:
-          year: "{current_year}"
-          month: "{current_month_eng}"
-        parser: "html_table"  # Requires HTML parsing
+        name: "ENSO Niño 3.4 Forecast"
+        description: "Multi-model mean Niño 3.4 SST anomaly forecast from IRI"
+        endpoint_template: "/plumes_json/{year}/{month}"
+        category: "enso"
+        unit: "°C"
   
   jamstec:
     indicators:
@@ -262,10 +269,16 @@ Each data source requires specific parsing logic due to different formats:
 - **Parsing**: Handle both formats, skip specified rows
 
 #### IRI Fetcher
-- **Format**: HTML tables
-- **Pattern**: Dynamic URLs with year/month
-- **Parsing**: BeautifulSoup or pandas read_html
-- **Challenge**: URL construction requires date logic
+- **Format**: JSON from the endpoint used by IRI's Interactive Chart
+- **Endpoint**: `https://ensoforecast.iri.columbia.edu/plumes_json/{year}/{month}`
+- **Month parameter**: Zero-based (`0` for January through `11` for December)
+- **Search window**: Current UTC month plus the previous two months, newest first
+- **Parsing**: Read the first nine positions of `averages.total` and map them
+  positionally to overlapping three-month seasons centered on the issue month
+- **Missing values**: Ignore `null`, booleans, strings, non-finite numbers,
+  overflowing numbers, and `-999` without compacting later season positions
+- **Fallbacks**: Do not derive values from `models` and do not request the
+  `current` or monthly quick-look HTML pages
 
 #### JAMSTEC Fetcher
 - **Format**: CSV

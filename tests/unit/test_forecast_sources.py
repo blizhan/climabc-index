@@ -1,10 +1,12 @@
 """Tests for forecast source parsing helpers."""
 
-from copy import deepcopy
+from unittest.mock import AsyncMock
 
 import pandas as pd
 import pytest
+import httpx
 
+from climabc.fetchers.forecast import iri as iri_module
 from climabc.fetchers.forecast import (
     _resolve_template_params,
     _extract_iri_issue_date,
@@ -14,6 +16,68 @@ from climabc.fetchers.forecast import (
 )
 from climabc.fetchers.forecast.iri import IriForecastFetcher
 from climabc.fetchers.forecast.jamstec import JamstecForecastFetcher
+
+
+def test_iri_config_uses_plumes_json_with_three_recent_batches(config):
+    """IRI configuration should target the three latest plumes JSON batches."""
+    iri_config = config["sources"]["iri"]
+    indicator_config = iri_config["indicators"]["enso_prob"]
+
+    assert iri_config["base_url"] == "https://ensoforecast.iri.columbia.edu"
+    assert iri_config["recent_batches"] == 3
+    assert iri_config["default"]["format"] == "json"
+    assert indicator_config["endpoint_template"] == "/plumes_json/{year}/{month}"
+    assert indicator_config["unit"] == "°C"
+    assert "url_template" not in indicator_config
+    assert "current_url" not in indicator_config
+    assert "params" not in indicator_config
+
+
+def test_extract_iri_total_values_preserves_season_positions():
+    """Invalid IRI totals should leave gaps rather than shift later seasons."""
+    payload = {
+        "averages": {
+            "total": [1, 1.1, None, 1.3, -999, 1.5, "1.6", True, float("inf"), 99]
+        }
+    }
+
+    values = iri_module._extract_iri_total_values(
+        payload,
+        issue_date=pd.Timestamp("2026-07-20"),
+    )
+
+    assert values == [("JJA", 1.0), ("JAS", 1.1), ("SON", 1.3), ("NDJ", 1.5)]
+
+
+def test_extract_iri_total_values_skips_oversized_integer_without_shifting():
+    """An overflowing integer should not prevent later positioned values."""
+    payload = {"averages": {"total": [10**10000, 1.2]}}
+
+    values = iri_module._extract_iri_total_values(
+        payload,
+        issue_date=pd.Timestamp("2026-07-20"),
+    )
+
+    assert values == [("JAS", 1.2)]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {},
+        {"averages": None},
+        {"averages": {}},
+        {"averages": {"total": {}}},
+        {"models": {"total": [1.0]}},
+    ],
+)
+def test_extract_iri_total_values_requires_valid_averages_total_list(payload):
+    """IRI JSON parsing should require an averages.total list."""
+    assert iri_module._extract_iri_total_values(
+        payload,
+        issue_date=pd.Timestamp("2026-07-20"),
+    ) == []
 
 
 def test_extract_iri_model_table_returns_season_value_pairs():
@@ -94,151 +158,211 @@ def test_source_specific_forecast_modules_are_available(config):
 
 
 @pytest.mark.asyncio
-async def test_iri_fetcher_can_collect_recent_multiple_batches(config, mock_respx):
-    """IRI fetcher should collect multiple recent monthly batches."""
-    cfg = deepcopy(config)
-    cfg["sources"]["jamstec"]["type"] = "observation"
-
-    dec_url = (
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "2025-December-quick-look/?enso_tab=enso-sst_table"
+async def test_iri_fetcher_collects_recent_plumes_json_batches(config, mock_respx):
+    """IRI fetcher should request recent JSON issue months in descending order."""
+    july_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/6"
+    june_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/5"
+    mock_respx.get(july_url).respond(
+        json={
+            "averages": {
+                "total": [1.0, 1.1, None, 1.3, -999, 1.5, 1.6, 1.7, 1.8, 99.0]
+            }
+        }
     )
-    nov_url = (
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "2025-November-quick-look/?enso_tab=enso-sst_table"
-    )
+    mock_respx.get(june_url).respond(json={"averages": {"total": [0.5] * 9}})
 
-    dec_html = """
-    <html><body>
-      <div>Published: December 18, 2025</div>
-      <table id="modelsTable">
-        <thead>
-          <tr><th colspan="4">IRI Models</th></tr>
-          <tr><th>Model</th><th>NDJ</th><th>DJF</th><th>JFM</th></tr>
-        </thead>
-        <tbody>
-          <tr><th>Average</th><td>0.8</td><td>0.9</td><td>1.0</td></tr>
-        </tbody>
-      </table>
-    </body></html>
-    """
-    nov_html = """
-    <html><body>
-      <div>Published: November 17, 2025</div>
-      <table id="modelsTable">
-        <thead>
-          <tr><th colspan="4">IRI Models</th></tr>
-          <tr><th>Model</th><th>OND</th><th>NDJ</th><th>DJF</th></tr>
-        </thead>
-        <tbody>
-          <tr><th>Average</th><td>0.6</td><td>0.7</td><td>0.8</td></tr>
-        </tbody>
-      </table>
-    </body></html>
-    """
-
-    mock_respx.get(dec_url).respond(status_code=200, text=dec_html)
-    mock_respx.get(nov_url).respond(status_code=200, text=nov_html)
-    mock_respx.get(
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "2025-October-quick-look/?enso_tab=enso-sst_table"
-    ).respond(status_code=404, text="")
-
-    async with IriForecastFetcher(cfg) as fetcher:
+    async with IriForecastFetcher(config) as fetcher:
         batches = await fetcher.fetch_batches(
             max_batches=2,
-            start_issue_date=pd.Timestamp("2025-12-01"),
+            start_issue_date=pd.Timestamp("2026-07-20"),
         )
 
-    assert len(batches) == 2
-    assert batches[0]["issuedDate"] == "2025-12"
-    assert batches[1]["issuedDate"] == "2025-11"
+    assert [batch["issuedDate"] for batch in batches] == ["2026-07", "2026-06"]
+    assert batches[0]["targetDates"] == [
+        "2026-07",
+        "2026-08",
+        "2026-10",
+        "2026-12",
+        "2027-01",
+        "2027-02",
+        "2027-03",
+    ]
+    assert [point["nino34"] for point in batches[0]["data"]] == [
+        1.0,
+        1.1,
+        1.3,
+        1.5,
+        1.6,
+        1.7,
+        1.8,
+    ]
+    assert [str(call.request.url) for call in mock_respx.calls] == [july_url, june_url]
 
 
 @pytest.mark.asyncio
-async def test_iri_fetcher_includes_current_batch_and_history(config, mock_respx):
-    """IRI fetcher should load latest `current` batch and then backfill history."""
-    cfg = deepcopy(config)
-    cfg["sources"]["jamstec"]["type"] = "observation"
-
-    current_url = (
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "current/?enso_tab=enso-sst_table"
+async def test_iri_fetcher_skips_request_and_json_failures(
+    config,
+    mock_respx,
+    caplog,
+):
+    """One failed issue month should not prevent trying older JSON batches."""
+    january_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/0"
+    december_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2025/11"
+    november_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2025/10"
+    mock_respx.get(january_url).mock(side_effect=httpx.ConnectError("connection failed"))
+    mock_respx.get(december_url).respond(text="not-json")
+    mock_respx.get(november_url).respond(
+        json={"averages": {"total": [0.25, 0.3, True, None, -999.0]}}
     )
-    dec_url = (
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "2025-December-quick-look/?enso_tab=enso-sst_table"
-    )
-    nov_url = (
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "2025-November-quick-look/?enso_tab=enso-sst_table"
-    )
+    caplog.set_level("WARNING", logger="climabc.fetchers.forecast.iri")
 
-    current_html = """
-    <html><body>
-      <div>Published: January 20, 2026</div>
-      <table id="modelsTable">
-        <thead>
-          <tr><th colspan="4">IRI Models</th></tr>
-          <tr><th>Model</th><th>JFM</th><th>FMA</th><th>MAM</th></tr>
-        </thead>
-        <tbody>
-          <tr><th>Average</th><td>1.2</td><td>1.1</td><td>1.0</td></tr>
-        </tbody>
-      </table>
-    </body></html>
-    """
-    dec_html = """
-    <html><body>
-      <div>Published: December 18, 2025</div>
-      <table id="modelsTable">
-        <thead>
-          <tr><th colspan="4">IRI Models</th></tr>
-          <tr><th>Model</th><th>NDJ</th><th>DJF</th><th>JFM</th></tr>
-        </thead>
-        <tbody>
-          <tr><th>Average</th><td>0.8</td><td>0.9</td><td>1.0</td></tr>
-        </tbody>
-      </table>
-    </body></html>
-    """
-    nov_html = """
-    <html><body>
-      <div>Published: November 17, 2025</div>
-      <table id="modelsTable">
-        <thead>
-          <tr><th colspan="4">IRI Models</th></tr>
-          <tr><th>Model</th><th>OND</th><th>NDJ</th><th>DJF</th></tr>
-        </thead>
-        <tbody>
-          <tr><th>Average</th><td>0.6</td><td>0.7</td><td>0.8</td></tr>
-        </tbody>
-      </table>
-    </body></html>
-    """
-
-    mock_respx.get(current_url).respond(status_code=200, text=current_html)
-    mock_respx.get(dec_url).respond(status_code=200, text=dec_html)
-    mock_respx.get(nov_url).respond(status_code=200, text=nov_html)
-
-    mock_respx.get(
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "2026-February-quick-look/?enso_tab=enso-sst_table"
-    ).respond(status_code=404, text="")
-    mock_respx.get(
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "2026-January-quick-look/?enso_tab=enso-sst_table"
-    ).respond(status_code=404, text="")
-    mock_respx.get(
-        "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/"
-        "2025-October-quick-look/?enso_tab=enso-sst_table"
-    ).respond(status_code=404, text="")
-
-    async with IriForecastFetcher(cfg) as fetcher:
+    async with IriForecastFetcher(config) as fetcher:
         batches = await fetcher.fetch_batches(
             max_batches=3,
-            start_issue_date=pd.Timestamp("2026-02-01"),
+            start_issue_date=pd.Timestamp("2026-01-01 00:30", tz="Asia/Shanghai"),
         )
 
-    assert len(batches) == 3
-    assert [batch["issuedDate"] for batch in batches] == ["2026-01", "2025-12", "2025-11"]
+    assert len(batches) == 1
+    assert batches[0]["issuedDate"] == "2025-11"
+    assert batches[0]["targetDates"] == ["2025-11", "2025-12"]
+    assert batches[0]["data"] == [{"nino34": 0.25}, {"nino34": 0.3}]
+    assert [str(call.request.url) for call in mock_respx.calls] == [
+        january_url,
+        december_url,
+        november_url,
+    ]
+    assert "request failed" in caplog.text
+    assert "2026-01" in caplog.text
+    assert "invalid JSON" in caplog.text
+    assert "2025-12" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_iri_fetcher_skips_http_and_empty_json_batches(
+    config,
+    mock_respx,
+    caplog,
+):
+    """HTTP errors and unusable totals should be logged while searching older months."""
+    july_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/6"
+    june_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/5"
+    may_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/4"
+    mock_respx.get(july_url).respond(status_code=503)
+    mock_respx.get(june_url).respond(
+        json={"averages": {"total": [None, -999, "1.0"]}}
+    )
+    mock_respx.get(may_url).respond(json={"averages": {"total": [0.2]}})
+    caplog.set_level("WARNING", logger="climabc.fetchers.forecast.iri")
+
+    async with IriForecastFetcher(config) as fetcher:
+        batches = await fetcher.fetch_batches(
+            max_batches=3,
+            start_issue_date=pd.Timestamp("2026-07-20"),
+        )
+
+    assert len(batches) == 1
+    assert batches[0]["issuedDate"] == "2026-05"
+    assert "HTTP 503" in caplog.text
+    assert "2026-07" in caplog.text
+    assert "missing usable averages.total" in caplog.text
+    assert "2026-06" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_iri_fetcher_defaults_to_current_month(
+    config,
+    mock_respx,
+    monkeypatch,
+):
+    """Omitting a start date should request the current calendar month's JSON."""
+    july_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/6"
+    mock_respx.get(july_url).respond(json={"averages": {"total": [0.4]}})
+    monkeypatch.setattr(
+        iri_module,
+        "_current_month_start",
+        lambda: pd.Timestamp("2026-07-01"),
+    )
+
+    async with IriForecastFetcher(config) as fetcher:
+        batches = await fetcher.fetch_batches(max_batches=1)
+
+    assert batches[0]["issuedDate"] == "2026-07"
+    assert [str(call.request.url) for call in mock_respx.calls] == [july_url]
+
+
+@pytest.mark.asyncio
+async def test_iri_fetcher_caps_search_at_three_json_batches_without_fallback(
+    config,
+    mock_respx,
+):
+    """Large limits should not expand the JSON search or trigger fallback requests."""
+    urls = [
+        "https://ensoforecast.iri.columbia.edu/plumes_json/2026/6",
+        "https://ensoforecast.iri.columbia.edu/plumes_json/2026/5",
+        "https://ensoforecast.iri.columbia.edu/plumes_json/2026/4",
+    ]
+    for url in urls:
+        mock_respx.get(url).respond(json={"models": [{"data": [9.9] * 9}]})
+
+    async with IriForecastFetcher(config) as fetcher:
+        batches = await fetcher.fetch_batches(
+            max_batches=99,
+            start_issue_date=pd.Timestamp("2026-07-01"),
+        )
+
+    requested_urls = [str(call.request.url) for call in mock_respx.calls]
+    assert batches == []
+    assert requested_urls == urls
+    assert all("quick-look" not in url and "/current/" not in url for url in requested_urls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_batches", ["3", 1.5, True, None])
+async def test_iri_fetcher_rejects_non_integer_max_batches_before_network_activity(
+    config,
+    mock_respx,
+    max_batches,
+):
+    """Non-integer limits should fail before any forecast request is made."""
+    async with IriForecastFetcher(config) as fetcher:
+        with pytest.raises(ValueError, match="max_batches"):
+            await fetcher.fetch_batches(max_batches=max_batches)
+
+    assert mock_respx.calls.call_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_batches", [0, -2])
+async def test_iri_fetcher_normalizes_nonpositive_limits_to_one_successful_batch(
+    config,
+    mock_respx,
+    max_batches,
+):
+    """Nonpositive limits should continue until one usable batch is collected."""
+    july_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/6"
+    june_url = "https://ensoforecast.iri.columbia.edu/plumes_json/2026/5"
+    mock_respx.get(july_url).respond(json={"averages": {"total": []}})
+    mock_respx.get(june_url).respond(json={"averages": {"total": [0.3]}})
+
+    async with IriForecastFetcher(config) as fetcher:
+        batches = await fetcher.fetch_batches(
+            max_batches=max_batches,
+            start_issue_date=pd.Timestamp("2026-07-01"),
+        )
+
+    assert [batch["issuedDate"] for batch in batches] == ["2026-06"]
+    assert [str(call.request.url) for call in mock_respx.calls] == [july_url, june_url]
+
+
+@pytest.mark.asyncio
+async def test_iri_fetch_batch_delegates_to_single_batch_fetch(config):
+    """The single-batch API should delegate with an explicit one-batch limit."""
+    fetcher = IriForecastFetcher(config)
+    fetcher.fetch_batches = AsyncMock(return_value=[{"issuedDate": "2026-07"}])
+    try:
+        batch = await fetcher.fetch_batch()
+    finally:
+        await fetcher.client.aclose()
+
+    assert batch == {"issuedDate": "2026-07"}
+    fetcher.fetch_batches.assert_awaited_once_with(max_batches=1)

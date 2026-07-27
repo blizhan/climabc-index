@@ -227,25 +227,21 @@ sources:
 
   iri:
     name: "IRI/LDEO Climate Data Library"
-    base_url: "https://iri.columbia.edu"
+    base_url: "https://ensoforecast.iri.columbia.edu"
     type: "forecast"
-    recent_batches: 6
+    recent_batches: 3
     
     default:
-      format: "html_table"
+      format: "json"
       frequency: "monthly"
     
     indicators:
       enso_prob:
-        name: "ENSO Probability"
-        description: "ENSO forecast probabilities from IRI/CPC"
-        url_template: "/our-expertise/climate/forecasts/enso/{year}-{month}-quick-look/?enso_tab=enso-sst_table"
-        current_url: "/our-expertise/climate/forecasts/enso/current/?enso_tab=enso-sst_table"
-        params:
-          year: "{current_year}"
-          month: "{current_month_eng}"
+        name: "ENSO Niño 3.4 Forecast"
+        description: "Multi-model mean Niño 3.4 SST anomaly forecast from IRI"
+        endpoint_template: "/plumes_json/{year}/{month}"
         category: "enso"
-        unit: "%"
+        unit: "°C"
 
   jamstec:
     name: "Japan Agency for Marine-Earth Science and Technology"

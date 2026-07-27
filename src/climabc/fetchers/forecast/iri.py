@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import html
+import logging
+import math
 import re
 from datetime import datetime
 from typing import Any
@@ -12,6 +14,7 @@ import pandas as pd
 from .base import (
     BaseForecastFetcher,
     _SEASON_TOKEN_RE,
+    _current_month_start,
     _extract_tables,
     _to_float,
     _values_to_batch,
@@ -22,6 +25,57 @@ _PUBLISHED_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _QUICK_LOOK_PATH_RE = re.compile(r"/(\d{4})-([A-Za-z]+)-quick-look/", flags=re.IGNORECASE)
+_CENTERED_SEASONS = (
+    "DJF",
+    "JFM",
+    "FMA",
+    "MAM",
+    "AMJ",
+    "MJJ",
+    "JJA",
+    "JAS",
+    "ASO",
+    "SON",
+    "OND",
+    "NDJ",
+)
+_IRI_SEARCH_MONTHS = 3
+logger = logging.getLogger(__name__)
+
+
+def _extract_iri_total_values(
+    payload: Any,
+    issue_date: pd.Timestamp,
+) -> list[tuple[str, float]]:
+    """Extract finite IRI averages.total values with centered season labels."""
+    if not isinstance(payload, dict):
+        return []
+
+    averages = payload.get("averages")
+    if not isinstance(averages, dict):
+        return []
+
+    total = averages.get("total")
+    if not isinstance(total, list):
+        return []
+
+    issue_month_index = pd.Timestamp(issue_date).month - 1
+    values: list[tuple[str, float]] = []
+    for offset, raw_value in enumerate(total[:9]):
+        if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+            continue
+
+        try:
+            value = float(raw_value)
+        except OverflowError:
+            continue
+        if not math.isfinite(value) or value == -999.0:
+            continue
+
+        season = _CENTERED_SEASONS[(issue_month_index + offset) % 12]
+        values.append((season, value))
+
+    return values
 
 
 def _extract_iri_issue_date(raw_html: str) -> pd.Timestamp | None:
@@ -138,30 +192,17 @@ class IriForecastFetcher(BaseForecastFetcher):
         indicator_config: dict[str, Any],
         issue_date: pd.Timestamp,
     ) -> str:
-        """Render one IRI quick-look URL for a specific issue month."""
-        template = indicator_config.get("url_template")
+        """Render one IRI plumes JSON URL for a specific issue month."""
+        template = indicator_config.get("endpoint_template")
         if not template:
-            raise ValueError("IRI forecast indicator requires 'url_template'")
+            raise ValueError("IRI forecast indicator requires 'endpoint_template'")
 
         rendered_path = template.format(
             year=issue_date.year,
-            month=issue_date.strftime("%B"),
+            month=issue_date.month - 1,
         )
         base_url = str(self.source_config.get("base_url", "")).strip()
         return f"{base_url.rstrip('/')}/{rendered_path.lstrip('/')}"
-
-    def _build_current_url(self, indicator_config: dict[str, Any]) -> str:
-        """Build URL for the latest IRI ENSO page."""
-        current_path = indicator_config.get(
-            "current_url",
-            "/our-expertise/climate/forecasts/enso/current/?enso_tab=enso-sst_table",
-        )
-        current_url = str(current_path).strip()
-        if current_url.startswith("http://") or current_url.startswith("https://"):
-            return current_url
-
-        base_url = str(self.source_config.get("base_url", "")).strip()
-        return f"{base_url.rstrip('/')}/{current_url.lstrip('/')}"
 
     async def fetch_batch(self) -> dict[str, Any] | None:
         batches = await self.fetch_batches(max_batches=1)
@@ -173,76 +214,74 @@ class IriForecastFetcher(BaseForecastFetcher):
         start_issue_date: pd.Timestamp | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch recent IRI forecast batches by walking backward month-by-month."""
+        if isinstance(max_batches, bool) or not isinstance(max_batches, int):
+            raise ValueError("max_batches must be an integer")
+        limit = max(1, max_batches)
+
         indicator_config = self.source_config.get("indicators", {}).get("enso_prob")
         if not indicator_config:
             return []
 
-        limit = max(1, int(max_batches))
-        search_window = int(self.source_config.get("search_months", max(limit * 3, limit)))
-        search_window = max(search_window, limit)
-
-        issue_start = start_issue_date or pd.Timestamp.utcnow().tz_localize(None).replace(day=1)
+        if start_issue_date is None:
+            issue_start = _current_month_start().normalize().replace(day=1)
+        else:
+            issue_start = pd.Timestamp(start_issue_date)
+            if issue_start.tz is not None:
+                issue_start = issue_start.tz_localize(None)
+            issue_start = issue_start.normalize().replace(day=1)
 
         batches: list[dict[str, Any]] = []
-        seen_issue_dates: set[str] = set()
-
-        def _append_batch(values: list[tuple[str, float]], issue_date: pd.Timestamp) -> bool:
-            issued_key = issue_date.strftime("%Y-%m")
-            if issued_key in seen_issue_dates:
-                return False
-
-            batch = _values_to_batch(
-                values,
-                issue_date=issue_date,
-                metric_key="nino34",
-                source_label=self.source,
-            )
-            if batch is None:
-                return False
-
-            seen_issue_dates.add(issued_key)
-            batches.append(batch)
-            return True
-
-        # Fetch latest batch from IRI "current" page first.
-        history_start = issue_start
-        try:
-            current_url = self._build_current_url(indicator_config)
-            response = await self.client.get(current_url)
-            if response.status_code < 400:
-                current_values = _extract_iri_nino34_values(response.text)
-                if current_values:
-                    current_issue_date = (
-                        _extract_iri_issue_date(response.text)
-                        or _extract_issue_date_from_quicklook_url(str(response.url))
-                        or issue_start
-                    )
-                    if _append_batch(current_values, current_issue_date):
-                        history_start = current_issue_date - pd.DateOffset(months=1)
-        except Exception:  # noqa: BLE001
-            pass
-
-        for month_offset in range(search_window):
+        for month_offset in range(_IRI_SEARCH_MONTHS):
             if len(batches) >= limit:
                 break
 
-            candidate_issue_date = history_start - pd.DateOffset(months=month_offset)
+            candidate_issue_date = issue_start - pd.DateOffset(months=month_offset)
             url = self._build_issue_month_url(indicator_config, candidate_issue_date)
 
             try:
                 response = await self.client.get(url)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Skipping IRI forecast %s: request failed: %s",
+                    candidate_issue_date.strftime("%Y-%m"),
+                    exc,
+                )
                 continue
 
             if response.status_code >= 400:
+                logger.warning(
+                    "Skipping IRI forecast %s: HTTP %s",
+                    candidate_issue_date.strftime("%Y-%m"),
+                    response.status_code,
+                )
                 continue
 
-            values = _extract_iri_nino34_values(response.text)
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                logger.warning(
+                    "Skipping IRI forecast %s: invalid JSON: %s",
+                    candidate_issue_date.strftime("%Y-%m"),
+                    exc,
+                )
+                continue
+
+            values = _extract_iri_total_values(payload, candidate_issue_date)
             if not values:
+                logger.warning(
+                    "Skipping IRI forecast %s: missing usable averages.total",
+                    candidate_issue_date.strftime("%Y-%m"),
+                )
                 continue
 
-            page_issue_date = _extract_iri_issue_date(response.text) or candidate_issue_date
-            _append_batch(values, page_issue_date)
+            batch = _values_to_batch(
+                values,
+                issue_date=candidate_issue_date,
+                metric_key="nino34",
+                source_label=self.source,
+            )
+            if batch is not None:
+                batches.append(batch)
 
         batches.sort(key=lambda item: item.get("issuedDate", ""), reverse=True)
         return batches
