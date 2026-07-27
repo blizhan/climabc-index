@@ -7,7 +7,7 @@ Live Console: https://blizhan.github.io/climabc-index/
 
 - Historical observations from **NOAA PSL** (used by CLI generate flow)
 - Forecast sources:
-  - **IRI ENSO Quick Look** (latest `current` + historical monthly quick-look pages)
+  - **IRI ENSO forecast plume** (`plumes_json` multi-model mean)
   - **JAMSTEC SINTEX-F DMI**
 - Frontend timeline and snapshot table reading data from split parquet directories
 
@@ -23,7 +23,7 @@ Live Console: https://blizhan.github.io/climabc-index/
 
 | Institution | Source | DataType | DataName | FetchData (this repo) |
 |---|---|---|---|---|
-| IRI | IRI | forecast | ENSO Probability | `uv run climabc generate --split-output-dir data` → `src/climabc/fetchers/forecast/iri.py` |
+| IRI | IRI | forecast | Niño 3.4 SST Anomaly | `uv run climabc generate --split-output-dir data` → `src/climabc/fetchers/forecast/iri.py` |
 | IRI | CPC | forecast | ENSO Probability | `Not implemented yet` (no CPC forecast fetcher wired) |
 | JAMSTEC | JAMSTEC | forecast | Dipole Mode Index | `uv run climabc generate --split-output-dir data` → `src/climabc/fetchers/forecast/jamstec.py` |
 | PSL/NCEI | PSL/NCEI | history | Nina 34 Anomaly | `PSL:nino34a` or `NCEI:nina_all.nina34a` |
@@ -156,10 +156,14 @@ Open the shown local Vite URL.
 
 ## Forecast Fetching Behavior
 
-- IRI fetcher first loads:
-  - `/our-expertise/climate/forecasts/enso/current/?enso_tab=enso-sst_table`
-- Then backfills historical quick-look pages:
-  - `/our-expertise/climate/forecasts/enso/{year}-{month}-quick-look/?enso_tab=enso-sst_table`
+- IRI fetcher requests the Interactive Chart JSON endpoint:
+  - `https://ensoforecast.iri.columbia.edu/plumes_json/{year}/{month}`
+  - `month` is zero-based (`0` = January, `11` = December).
+  - It checks the current UTC month and the previous two months, newest first.
+  - The first nine positions in `averages.total` map to overlapping three-month
+    seasons centered on the issue month and the following eight months.
+  - Invalid values are skipped without shifting later values to different
+    seasons; the fetcher does not fall back to individual models or HTML pages.
 - JAMSTEC fetcher parses release split from `SINTEX_DMI.csv` and emits DMI forecast batch.
 
 ## Tests
@@ -173,5 +177,5 @@ cd frontend && npm test -- --run
 
 Data providers:
 - NOAA PSL: https://psl.noaa.gov
-- IRI ENSO Quick Look: https://iri.columbia.edu/our-expertise/climate/forecasts/enso/current/?enso_tab=enso-sst_table
+- IRI ENSO forecast plume JSON: https://ensoforecast.iri.columbia.edu/plumes_json/
 - JAMSTEC SINTEX-F DMI: https://www.jamstec.go.jp/virtualearth/data/SINTEX/SINTEX_DMI.csv
